@@ -454,6 +454,43 @@ def test_note_generation_distribution():
                                sum(easy_values) / len(easy_values)))
 
 
+def test_red_milestone():
+    game = RhythmGame(seed=14, max_chances=99,
+                      highscore=HighScoreStore(os.devnull))
+    ramp = game.difficulty.ramp_seconds
+    game.start()
+    spawned = []
+    original = game._spawn_note
+
+    def spawn(value=None):
+        note = original(value)
+        spawned.append(note)
+        return note
+
+    game._spawn_note = spawn
+
+    advance(game, ramp * STAGE_1 - 1.0)
+    check("no red note before 30 s", not any(
+        note.value == 20 for note in spawned),
+        str([note.value for note in spawned]))
+    advance(game, 2.0)
+    reds = [note for note in spawned if note.value == 20]
+    check("exactly one red note appears at 30 s", len(reds) == 1,
+          "{} red(s) at {:.1f} s".format(len(reds), game.elapsed))
+    check("the milestone red note is a valid 20 point code",
+          bool(reds) and value_of_code(reds[0].code) == 20,
+          reds[0].code if reds else "")
+    check("the milestone is only spawned once", game.red_introduced)
+
+    advance(game, ramp * STAGE_2 - game.elapsed)
+    check("no extra red notes in the middle stage",
+          sum(1 for note in spawned if note.value == 20) == 1,
+          str([note.value for note in spawned]))
+
+    game.restart()
+    check("restart clears the milestone flag", game.red_introduced is False)
+
+
 # ---------------------------------------------------------------------------
 # Gameplay
 # ---------------------------------------------------------------------------

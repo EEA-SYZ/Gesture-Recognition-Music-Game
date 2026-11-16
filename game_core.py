@@ -279,6 +279,7 @@ class RhythmGame(object):
         self.best_combo = 0
         self.hits = 0
         self.misses = 0
+        self.red_introduced = False
         self.elapsed = 0.0
         self.difficulty.at(0.0)
         self.notes = []
@@ -302,6 +303,7 @@ class RhythmGame(object):
         self.best_combo = 0
         self.hits = 0
         self.misses = 0
+        self.red_introduced = False
         self.elapsed = 0.0
         self.difficulty.at(0.0)
         self.notes = []
@@ -379,6 +381,13 @@ class RhythmGame(object):
         if self.hit_cooldown > 0:
             self.hit_cooldown = max(0.0, self.hit_cooldown - dt)
 
+        # One red note is introduced exactly when the second stage begins
+        # (30 s of the default 90 s ramp), even though red notes only start
+        # appearing randomly in the last stage.
+        if not self.red_introduced and self.difficulty.progress >= STAGE_1:
+            self._spawn_note(value=20)
+            self.red_introduced = True
+
         # Spawn.
         self.spawn_timer -= dt
         guard = 0
@@ -435,8 +444,9 @@ class RhythmGame(object):
     def _next_interval(self):
         return self.difficulty.spawn_interval() * self.rng.uniform(0.85, 1.15)
 
-    def _spawn_note(self):
-        value = self._pick_value()
+    def _spawn_note(self, value=None):
+        if value is None:
+            value = self._pick_value()
         code = random_code(value, self.rng)
         lane = self._pick_lane()
         x = lane * self.lane_width + (self.lane_width - self.note_width) / 2.0

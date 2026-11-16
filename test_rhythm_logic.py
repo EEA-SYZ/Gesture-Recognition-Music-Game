@@ -37,8 +37,8 @@ def check(name, condition, detail=""):
                              "  " + detail if detail else ""))
 
 
-def gesture(code=None, both_open=False):
-    return SimpleNamespace(code=code, both_open=both_open, hand_count=2)
+def gesture(code=None, start_pose=False):
+    return SimpleNamespace(code=code, start_pose=start_pose, hand_count=2)
 
 
 def advance(game, seconds, gesture_state=None, step=1.0 / 60.0):
@@ -230,18 +230,31 @@ def test_landmark_classifier():
           classify_hand(build_hand((1, 1, 1, 1))[:10], "L") is None)
 
 
-def test_start_gate_tolerance():
-    from gesture_twohands import HandReading
+def test_start_pose():
+    from gesture_twohands import START_CODE, is_start_pose
 
-    check("open hand counts as open",
-          HandReading("L", "P", "11111").is_open)
-    check("one misread finger still counts as open",
-          HandReading("L", "P", "10111").is_open)
-    check("two folded fingers are not open",
-          not HandReading("L", "P", "10011").is_open)
-    check("fist is not open", not HandReading("L", "P", "00000").is_open)
-    check("pointing hand is not open",
-          not HandReading("L", "P", "01000").is_open)
+    check("start pose code", START_CODE == "P11111P11111", START_CODE)
+    check("exactly both hands open with P thumbs",
+          is_start_pose("P11111P11111"))
+    check("N thumbs do not start",
+          not is_start_pose("N11111N11111") and
+          not is_start_pose("P11111N11111") and
+          not is_start_pose("N11111P11111"))
+    check("a folded finger does not start",
+          not is_start_pose("P11110P11110") and
+          not is_start_pose("P11111P01111"))
+    check("a fist does not start",
+          not is_start_pose("P00000P11111") and
+          not is_start_pose("P00000P00000"))
+    check("no code does not start", not is_start_pose(None))
+
+    # The ready screen only fills its hold bar for this exact pose.
+    game = RhythmGame(seed=13, highscore=HighScoreStore(os.devnull))
+    advance(game, 0.5, gesture(start_pose=True))
+    check("start pose fills the hold bar", game.hold_progress > 0.6,
+          "{:.2f}".format(game.hold_progress))
+    advance(game, 0.5, gesture(start_pose=False))
+    check("other poses drain the hold bar", game.hold_progress == 0.0)
 
 
 def test_finger_metrics():
@@ -447,17 +460,17 @@ def test_note_generation_distribution():
 def test_ready_and_start():
     game = RhythmGame(seed=2, highscore=HighScoreStore(os.devnull))
     check("starts in ready state", game.state == RhythmGame.READY)
-    advance(game, 0.3, gesture(both_open=True))
+    advance(game, 0.3, gesture(start_pose=True))
     check("hold progress grows", 0.4 < game.hold_progress < 0.5,
           "{:.2f}".format(game.hold_progress))
-    game.update(0.1, gesture(both_open=False))
+    game.update(0.1, gesture(start_pose=False))
     check("hold decays when hands close", game.hold_progress < 0.45)
     events = []
     for _ in range(120):
-        events.extend(game.update(1 / 60.0, gesture(both_open=True)))
+        events.extend(game.update(1 / 60.0, gesture(start_pose=True)))
         if game.state == RhythmGame.PLAYING:
             break
-    check("both hands open start the game",
+    check("start pose starts the game",
           game.state == RhythmGame.PLAYING)
     check("start event emitted",
           any(event["type"] == "start" for event in events))
@@ -590,14 +603,14 @@ def test_game_over_requires_restart():
     game.start()
     game.chances = 0
     game._finish()
-    advance(game, 0.5, gesture(both_open=True))
+    advance(game, 0.5, gesture(start_pose=True))
     check("game over does not restart on its own",
           game.state == RhythmGame.OVER)
     game.restart()
     check("restart returns to the ready screen",
           game.state == RhythmGame.READY)
-    advance(game, 1.0, gesture(both_open=True))
-    check("the new round needs the both hands hold",
+    advance(game, 1.0, gesture(start_pose=True))
+    check("the new round needs the start pose",
           game.state == RhythmGame.PLAYING)
 
 
@@ -608,13 +621,13 @@ def test_restart_requires_hold():
     game._finish()
     game.restart()
     check("restart resets the hold timer", game.hold_progress == 0.0)
-    advance(game, 0.3, gesture(both_open=True))
+    advance(game, 0.3, gesture(start_pose=True))
     check("holding is required again after restart",
           game.state == RhythmGame.READY)
     check("hold progress accumulates again",
           0.3 < game.hold_progress < 0.5,
           "{:.2f}".format(game.hold_progress))
-    advance(game, 0.6, gesture(both_open=True))
+    advance(game, 0.6, gesture(start_pose=True))
     check("holding hands starts the new round",
           game.state == RhythmGame.PLAYING)
     check("the new round has full chances", game.chances == 3)

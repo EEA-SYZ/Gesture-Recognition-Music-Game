@@ -186,31 +186,31 @@ class HandReading(object):
     def code(self):
         return hand_code(self.thumb, self.bits)
 
-    @property
-    def is_open(self):
-        """Open enough to count as "张开" for the start gate.
-
-        At least three of the four long fingers have to be extended: a single
-        misread finger must not stop the player from starting a round, while a
-        fist or a pointing hand is still clearly not open.
-        """
-        return self.bits[1:].count("1") >= 3
-
     def __repr__(self):
         return "HandReading({}, {})".format(self.side, self.code)
+
+
+#: The exact pose that starts a round: both hands fully open, both thumbs
+#: pointing towards the middle of the screen.
+START_CODE = "P11111P11111"
+
+
+def is_start_pose(code):
+    """True when a 12 character code is the "both hands open" start pose."""
+    return code == START_CODE
 
 
 class GestureFrame(object):
     """Result of one recognition pass."""
 
-    __slots__ = ("code", "hands", "image", "both_open", "timestamp")
+    __slots__ = ("code", "hands", "image", "start_pose", "timestamp")
 
-    def __init__(self, code=None, hands=None, image=None, both_open=False,
+    def __init__(self, code=None, hands=None, image=None, start_pose=False,
                  timestamp=0.0):
         self.code = code
         self.hands = hands or []
         self.image = image
-        self.both_open = both_open
+        self.start_pose = start_pose
         self.timestamp = timestamp
 
     @property
@@ -336,13 +336,13 @@ class TwoHandRecognizer(object):
         if len(hands) == 2:
             code = make_code(hands[0].code, hands[1].code)
 
-        both_open = len(hands) == 2 and all(hand.is_open for hand in hands)
+        start_pose = is_start_pose(code)
 
         for hand in hands:
             self._draw_hand(frame_bgr, hand)
 
         return GestureFrame(code=code, hands=hands, image=frame_bgr,
-                            both_open=both_open, timestamp=time.time())
+                            start_pose=start_pose, timestamp=time.time())
 
     # -- drawing --------------------------------------------------------
     def _draw_hand(self, frame, hand):

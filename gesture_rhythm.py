@@ -10,11 +10,11 @@ skeletons, and the pygame game window with falling gesture notes.
 
 Controls
 --------
-* show both hands open for 0.7 s: start the round
+* hold P11111 P11111 for 0.7 s: start the round
 * make the gesture drawn on a falling note: clear it and score
 * a note that reaches the bottom costs one of the three chances
 * click 重新开始 (or press space) on the game over screen: back to the ready
-  screen, where the round starts by holding both hands open again
+  screen, where the round starts by holding P11111 P11111 again
 * ESC quits
 """
 
@@ -202,12 +202,14 @@ class RhythmScene(object):
                    ((self.size[0] - total) // 2, 206), hand_size, 14)
 
         draw_text(screen, fonts["medium"], "双手张开，保持 0.7 秒开始",
-                  TEXT_LIGHT, center=(self.size[0] // 2, 352))
-        draw_progress_bar(screen, pygame.Rect(110, 382, 260, 16),
+                  TEXT_LIGHT, center=(self.size[0] // 2, 340))
+        draw_text(screen, fonts["tiny"], "开始姿势：P11111  P11111",
+                  ACCENT_DIM, center=(self.size[0] // 2, 370))
+        draw_progress_bar(screen, pygame.Rect(110, 394, 260, 16),
                           game.hold_progress, ACCENT)
         draw_text(screen, fonts["small"],
                   "历史最高  {}".format(game.best_score), TEXT_DIM,
-                  center=(self.size[0] // 2, 428))
+                  center=(self.size[0] // 2, 440))
 
         for index, line in enumerate((
                 "屏幕上的手势音符 = 双手要做的动作",
@@ -370,7 +372,7 @@ def annotate_camera(image, game, gesture):
     by_side = {hand.side: hand for hand in hands}
 
     states = {
-        RhythmGame.READY: "START: hold BOTH hands OPEN",
+        RhythmGame.READY: "START: hold P11111 P11111",
         RhythmGame.PLAYING: "PLAYING: match the note gestures",
         RhythmGame.OVER: "GAME OVER - restart on the game window",
     }
@@ -522,7 +524,7 @@ def run(source, scene=None, sound=None, hook=None, fps=60,
 def _handle_restart(game):
     """The restart button only returns to the ready screen.
 
-    Starting to play always requires holding both hands open, every round.
+    Starting to play always requires holding P11111 P11111, every round.
     """
     if game.state == RhythmGame.OVER:
         game.restart()

@@ -27,7 +27,7 @@ NOTE_HEIGHT = 130
 
 MAX_CHANCES = 3
 RAMP_SECONDS = 90.0       # seconds from "as easy as possible" to full difficulty
-HOLD_SECONDS = 0.7        # both hands open for this long starts the game
+HOLD_SECONDS = 0.7        # the P11111P11111 pose held this long starts the game
 HIT_COOLDOWN = 0.22       # seconds between two matches of the same gesture
 POPUP_TTL = 0.85
 
@@ -319,8 +319,8 @@ class RhythmGame(object):
     def restart(self):
         """Restart button: back to the ready screen.
 
-        The next round always has to be started by holding both hands open
-        again, exactly like the first round.
+        The next round always has to be started by holding P11111P11111 again,
+        exactly like the first round.
         """
         self.reset()
 
@@ -339,7 +339,7 @@ class RhythmGame(object):
         """Advance the game by *dt* seconds.
 
         Args:
-            gesture: object with ``code`` (12 chars or None) and ``both_open``
+            gesture: object with ``code`` (12 chars or None) and ``start_pose``
                 attributes, i.e. a :class:`gesture_twohands.GestureFrame`.
         """
         dt = max(0.0, min(float(dt), 0.1))
@@ -364,8 +364,8 @@ class RhythmGame(object):
         self.popups = [p for p in self.popups if p["age"] < POPUP_TTL]
 
     def _update_ready(self, dt, gesture):
-        both_open = bool(getattr(gesture, "both_open", False))
-        if not both_open:
+        start_pose = bool(getattr(gesture, "start_pose", False))
+        if not start_pose:
             self.hold_time = max(0.0, self.hold_time - dt * 2.5)
             return
         self.hold_time += dt

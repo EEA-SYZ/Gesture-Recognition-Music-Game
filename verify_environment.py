@@ -177,7 +177,7 @@ def check_game_logic():
            game.state == RhythmGame.READY)
     game.start()
     for _ in range(120):
-        game.update(1 / 60.0, SimpleNamespace(code=None, both_open=False))
+        game.update(1 / 60.0, SimpleNamespace(code=None, start_pose=False))
     record("notes spawn while playing", len(game.notes) > 0,
            "{} note(s)".format(len(game.notes)))
 

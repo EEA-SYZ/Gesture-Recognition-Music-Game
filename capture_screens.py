@@ -62,14 +62,15 @@ class ScriptedSource(object):
 
     def __init__(self):
         self.code = None
-        self.both_open = False
+        self.start_pose = False
 
-    def set(self, code=None, both_open=False):
+    def set(self, code=None, start_pose=False):
         self.code = code
-        self.both_open = both_open
+        self.start_pose = start_pose
 
     def latest(self):
-        gesture = SimpleNamespace(code=self.code, both_open=self.both_open,
+        gesture = SimpleNamespace(code=self.code,
+                                  start_pose=self.start_pose,
                                   hand_count=2 if self.code else 0)
         return None, gesture
 
@@ -99,7 +100,7 @@ def make_hook(source):
             return False
 
         if game.state == RhythmGame.READY:
-            source.set(both_open=True)
+            source.set(start_pose=True)
             if frame == 22:
                 save_shot("screenshot_start.png")
             return None

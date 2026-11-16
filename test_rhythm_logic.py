@@ -61,15 +61,15 @@ def test_examples_from_requirements():
     }
     ten = {
         "P01000P01000", "P01100P01100", "P01110P01110",
-        "P01111P01111", "P00111P00111", "P11000P11000",
+        "P01111P01111", "P00111P00111",
     }
     fifteen = {
-        "P11010P11010", "P01010P01010", "P00101P00101", "P01001P01001",
-        "N11010N11010", "P11010N11010", "N11010P11010",
+        "P10000P10000", "P11000P11000", "P11100P11100",
+        "N10000N10000", "P10000N10000", "N11000P11000",
     }
     twenty = {
-        "P11111P00000", "P01000P01100", "P11010P01010", "P01001N11111",
-        "P11010N11000", "N11010P11111",
+        "P11111P00000", "P01000P01100", "P10000P01000", "P00111N11111",
+        "P11000N11111", "P11100P01110",
     }
     for code in sorted(five):
         check("5 points {}".format(format_code(code)),
@@ -87,28 +87,29 @@ def test_examples_from_requirements():
         check("20 points {}".format(format_code(code)),
               value_of_code(code) == 20, describe(code))
     # Thumb variations: N hands must keep the thumb extended.
-    check("10 points N11000P11000", value_of_code("N11000P11000") == 10)
-    check("10 points P11000N11000", value_of_code("P11000N11000") == 10)
-    check("N01110P01110 removed (N thumb folded)",
+    check("yellow allows N (11000 thumb is extended)",
+          value_of_code("N11000N11000") == 15)
+    check("blue does not allow N (folded thumb)",
           value_of_code("N01110P01110") == 0)
-    check("yellow with N thumb folded removed",
-          value_of_code("N01010P01010") == 0)
+    check("11000 is no longer a blue pattern",
+          value_of_code("P11000P11000") == 15)
     # Everything else is not a note gesture.
     check("invalid pattern 10101", value_of_code("P10101P10101") == 0)
     check("invalid thumb X", value_of_code("X11111P11111") == 0)
     check("too short", value_of_code("P1111P11111") == 0)
     check("empty", value_of_code("") == 0)
+    check("removed pattern 11010", value_of_code("P11010P11010") == 0)
     check("is_valid_code", is_valid_code("P11111N00000")
           and not is_valid_code("p11111n00000"))
 
 
 def test_catalog_sizes_and_consistency():
-    check("catalog total is 225", len(CATALOG) == 225, str(len(CATALOG)))
+    check("catalog total is 196", len(CATALOG) == 196, str(len(CATALOG)))
     sizes = {value: len(codes) for value, codes in CODES_BY_VALUE.items()}
     check("5 green gestures", sizes[5] == 5, str(sizes[5]))
-    check("9 blue gestures", sizes[10] == 9, str(sizes[10]))
-    check("7 yellow gestures", sizes[15] == 7, str(sizes[15]))
-    check("204 red gestures", sizes[20] == 204, str(sizes[20]))
+    check("5 blue gestures", sizes[10] == 5, str(sizes[10]))
+    check("12 yellow gestures", sizes[15] == 12, str(sizes[15]))
+    check("174 red gestures", sizes[20] == 174, str(sizes[20]))
     check("categories are disjoint",
           not (set(CODES_BY_VALUE[5]) & set(CODES_BY_VALUE[10])) and
           not (set(CODES_BY_VALUE[10]) & set(CODES_BY_VALUE[15])) and
@@ -132,7 +133,7 @@ def test_catalog_sizes_and_consistency():
     check("catalog rule consistency", not wrong, str(wrong[:4]))
     check("all patterns used", set(PATTERNS_5 + PATTERNS_10 +
                                    PATTERNS_15) == set(ALL_PATTERNS))
-    check("12 per-hand patterns", len(ALL_PATTERNS) == 12)
+    check("10 per-hand patterns", len(ALL_PATTERNS) == 10)
     check("every N hand has the thumb out",
           all(parse_hand(code[6:])[0] != "N" or
               parse_hand(code[6:])[1][0] == "1"

@@ -90,6 +90,7 @@ class SoundBank(object):
             "hit5": self._tone([660.0], 0.11, 0.18, 20.0),
             "hit10": self._tone([880.0, 1320.0], 0.13, 0.17, 16.0),
             "hit15": self._tone([1046.0, 1568.0, 2093.0], 0.16, 0.16, 13.0),
+            "hit20": self._tone([1318.5, 1975.5, 2637.0], 0.18, 0.15, 11.0),
             "miss": self._tone([150.0, 110.0], 0.30, 0.24, 7.0),
             "start": self._sequence([(523.25, 0.09), (659.25, 0.09),
                                      (783.99, 0.14)]),
@@ -104,7 +105,7 @@ class SoundBank(object):
             return
         kind = event.get("type")
         if kind == "hit":
-            key = {5: "hit5", 10: "hit10", 15: "hit15"}.get(
+            key = {5: "hit5", 10: "hit10", 15: "hit15", 20: "hit20"}.get(
                 event.get("value"), "hit5")
         elif kind == "miss":
             key = "miss"

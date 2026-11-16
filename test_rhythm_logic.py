@@ -19,10 +19,10 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 os.chdir(ROOT)
 
-from game_core import (HighScoreStore, Note, PLAY_BOTTOM, PLAY_TOP,  # noqa
-                       RhythmGame)
+from game_core import (INTERVAL_PHASE, SPEED_EASY, HighScoreStore,  # noqa
+                       Note, PLAY_BOTTOM, PLAY_TOP, RhythmGame, VALUE_PHASE)
 from gesture_catalog import (ALL_PATTERNS, CATALOG, CODES_BY_VALUE,  # noqa
-                             PATTERNS_5, PATTERNS_10, PATTERNS_15_EXTRA,
+                             PATTERNS_5, PATTERNS_10, PATTERNS_15,
                              describe, format_code, hand_code,
                              hand_thumb_on_right, is_valid_code, make_code,
                              parse_hand, random_code, score_for_patterns,
@@ -63,6 +63,14 @@ def test_examples_from_requirements():
         "P01000P01000", "P01100P01100", "P01110P01110",
         "P01111P01111", "P00111P00111", "P11000P11000",
     }
+    fifteen = {
+        "P11010P11010", "P01010P01010", "P00101P00101", "P01001P01001",
+        "N11010N11010", "P11010N11010", "N11010P11010",
+    }
+    twenty = {
+        "P11111P00000", "P01000P01100", "P11010P01010", "P01001N11111",
+        "P11010N11000", "N11010P11111",
+    }
     for code in sorted(five):
         check("5 points {}".format(format_code(code)),
               value_of_code(code) == 5, describe(code))
@@ -72,36 +80,39 @@ def test_examples_from_requirements():
     for code in sorted(ten):
         check("10 points {}".format(format_code(code)),
               value_of_code(code) == 10, describe(code))
+    for code in sorted(fifteen):
+        check("15 points {}".format(format_code(code)),
+              value_of_code(code) == 15, describe(code))
+    for code in sorted(twenty):
+        check("20 points {}".format(format_code(code)),
+              value_of_code(code) == 20, describe(code))
     # Thumb variations: N hands must keep the thumb extended.
     check("10 points N11000P11000", value_of_code("N11000P11000") == 10)
     check("10 points P11000N11000", value_of_code("P11000N11000") == 10)
     check("N01110P01110 removed (N thumb folded)",
           value_of_code("N01110P01110") == 0)
-    # Mixed hand shapes are 15 points.
-    check("15 points open + fist", value_of_code("P11111P00000") == 15)
-    check("15 points 01000 + 01100", value_of_code("P01000P01100") == 15)
-    check("15 points extra pattern", value_of_code("P11010P01010") == 15)
-    check("15 points extra + open", value_of_code("P01001N11111") == 15)
-    check("15 points N hand with thumb out", value_of_code("P11010N11000") == 15)
+    check("yellow with N thumb folded removed",
+          value_of_code("N01010P01010") == 0)
     # Everything else is not a note gesture.
     check("invalid pattern 10101", value_of_code("P10101P10101") == 0)
     check("invalid thumb X", value_of_code("X11111P11111") == 0)
     check("too short", value_of_code("P1111P11111") == 0)
     check("empty", value_of_code("") == 0)
-    check("equal extra patterns", value_of_code("P11010P11010") == 0)
     check("is_valid_code", is_valid_code("P11111N00000")
           and not is_valid_code("p11111n00000"))
 
 
 def test_catalog_sizes_and_consistency():
-    check("catalog total is 218", len(CATALOG) == 218, str(len(CATALOG)))
+    check("catalog total is 225", len(CATALOG) == 225, str(len(CATALOG)))
     sizes = {value: len(codes) for value, codes in CODES_BY_VALUE.items()}
     check("5 green gestures", sizes[5] == 5, str(sizes[5]))
     check("9 blue gestures", sizes[10] == 9, str(sizes[10]))
-    check("204 red gestures", sizes[15] == 204, str(sizes[15]))
+    check("7 yellow gestures", sizes[15] == 7, str(sizes[15]))
+    check("204 red gestures", sizes[20] == 204, str(sizes[20]))
     check("categories are disjoint",
           not (set(CODES_BY_VALUE[5]) & set(CODES_BY_VALUE[10])) and
-          not (set(CODES_BY_VALUE[10]) & set(CODES_BY_VALUE[15])))
+          not (set(CODES_BY_VALUE[10]) & set(CODES_BY_VALUE[15])) and
+          not (set(CODES_BY_VALUE[15]) & set(CODES_BY_VALUE[20])))
 
     wrong = []
     for code, value in CATALOG.items():
@@ -110,9 +121,9 @@ def test_catalog_sizes_and_consistency():
         expected = score_for_patterns(left_bits, right_bits)
         if expected != value:
             wrong.append((code, value, expected))
-        if value == 15 and left_bits == right_bits:
-            wrong.append((code, "15 with equal patterns", ""))
-        if value in (5, 10) and left_bits != right_bits:
+        if value == 20 and left_bits == right_bits:
+            wrong.append((code, "20 with equal patterns", ""))
+        if value in (5, 10, 15) and left_bits != right_bits:
             wrong.append((code, "same-pattern rule broken", ""))
         for thumb, bits in ((left_thumb, left_bits),
                             (right_thumb, right_bits)):
@@ -120,7 +131,7 @@ def test_catalog_sizes_and_consistency():
                 wrong.append((code, "N hand with folded thumb", ""))
     check("catalog rule consistency", not wrong, str(wrong[:4]))
     check("all patterns used", set(PATTERNS_5 + PATTERNS_10 +
-                                   PATTERNS_15_EXTRA) == set(ALL_PATTERNS))
+                                   PATTERNS_15) == set(ALL_PATTERNS))
     check("12 per-hand patterns", len(ALL_PATTERNS) == 12)
     check("every N hand has the thumb out",
           all(parse_hand(code[6:])[0] != "N" or
@@ -135,7 +146,7 @@ def test_hand_code_helpers():
     check("format_code", format_code("N00000P11111") == "N00000 P11111")
     check("random_code value", all(
         value_of_code(random_code(value, random.Random(1))) == value
-        for value in (5, 10, 15)))
+        for value in (5, 10, 15, 20)))
     check("thumb on right, left hand P", hand_thumb_on_right("P11111", "L"))
     check("thumb on left, left hand N",
           not hand_thumb_on_right("N11111", "L"))
@@ -307,55 +318,104 @@ def test_smoothing():
 def test_difficulty_curve():
     game = RhythmGame(seed=1, ramp_seconds=90.0,
                       highscore=HighScoreStore(os.devnull))
+    ramp = game.difficulty.ramp_seconds
     check("difficulty starts at 0", game.difficulty.at(0.0) == 0.0)
     check("difficulty halfway", abs(game.difficulty.at(45.0) - 0.5) < 1e-6)
     check("difficulty caps at 1", game.difficulty.at(500.0) == 1.0)
 
     game.difficulty.at(0.0)
-    easy_interval = game.difficulty.spawn_interval()
-    easy_speed = game.difficulty.base_speed()
-    easy_weights = game.difficulty.value_weights()
-    game.difficulty.at(game.difficulty.ramp_seconds)
-    hard_interval = game.difficulty.spawn_interval()
-    hard_speed = game.difficulty.base_speed()
-    hard_weights = game.difficulty.value_weights()
+    start = (game.difficulty.spawn_interval(),
+             game.difficulty.base_speed(),
+             game.difficulty.value_weights())
+    game.difficulty.at(ramp * VALUE_PHASE)
+    after_values = (game.difficulty.spawn_interval(),
+                    game.difficulty.base_speed(),
+                    game.difficulty.value_weights())
+    game.difficulty.at(ramp * INTERVAL_PHASE)
+    after_interval = (game.difficulty.spawn_interval(),
+                      game.difficulty.base_speed(),
+                      game.difficulty.value_weights())
+    game.difficulty.at(ramp)
+    final = (game.difficulty.spawn_interval(),
+             game.difficulty.base_speed(),
+             game.difficulty.value_weights())
 
-    check("spawn interval shrinks", hard_interval < easy_interval,
-          "{:.2f} -> {:.2f}".format(easy_interval, hard_interval))
-    check("fall speed grows", hard_speed > easy_speed,
-          "{:.0f} -> {:.0f}".format(easy_speed, hard_speed))
-    check("red notes start at 0 %", easy_weights[2] == 0.0)
-    check("red notes grow to 45 %", abs(hard_weights[2] - 0.45) < 1e-9)
-    check("weights sum to 1", abs(sum(hard_weights) - 1.0) < 1e-9)
+    check("value stage only changes the note mix",
+          (start[0], start[1]) == (after_values[0], after_values[1]) and
+          after_values[2] != start[2],
+          "weights {} -> {}".format(start[2], after_values[2]))
+    check("interval stage only changes the spawn interval",
+          after_values[2] == after_interval[2] and
+          after_values[1] == after_interval[1] and
+          after_interval[0] < after_values[0],
+          "{:.2f} -> {:.2f}".format(after_values[0], after_interval[0]))
+    check("speed stage only changes the fall speed",
+          final[0] == after_interval[0] and
+          final[2] == after_interval[2] and
+          final[1] > after_interval[1],
+          "{:.0f} -> {:.0f}".format(after_interval[1], final[1]))
+
+    check("starts with green notes only", start[2][0] == 1.0)
+    check("value mix reaches 20/30/25/25",
+          all(abs(a - b) < 1e-9 for a, b in
+              zip(final[2], (0.20, 0.30, 0.25, 0.25))), str(final[2]))
+    check("weights sum to 1", abs(sum(final[2]) - 1.0) < 1e-9)
+    check("spawn interval shrinks", final[0] < start[0],
+          "{:.2f} -> {:.2f}".format(start[0], final[0]))
+    check("fall speed grows", final[1] > start[1],
+          "{:.0f} -> {:.0f}".format(start[1], final[1]))
+    check("hud level reaches 10", game.difficulty.at(ramp) and
+          game.difficulty.level == 10)
+
+
+def test_speed_fluctuation():
+    game = RhythmGame(seed=2, highscore=HighScoreStore(os.devnull))
+    game.difficulty.at(0.0)
+    first = game._roll_speed()
+    speeds = [game._roll_speed() for _ in range(200)]
+    check("note speeds vary", max(speeds) - min(speeds) > 20.0,
+          "{:.0f}..{:.0f}".format(min(speeds), max(speeds)))
+    check("speed is never below the base",
+          min(speeds) >= game.difficulty.base_speed() - 1e-6)
+
+    # The base speed itself wobbles while the speed stage is running.
+    ramp = game.difficulty.ramp_seconds
+    game.difficulty.at(ramp * 0.85)
+    early = game.difficulty.base_speed()
+    game.difficulty.at(ramp * 0.85 + 3.0)
+    later = game.difficulty.base_speed()
+    check("base speed wobbles during the speed stage", abs(later - early) > 1.0,
+          "{:.1f} -> {:.1f} (first {:.1f})".format(early, later, first))
+    game.difficulty.at(ramp * 0.2)
+    check("base speed is the easy speed before the speed stage",
+          game.difficulty.base_speed() == SPEED_EASY,
+          "{:.1f}".format(game.difficulty.base_speed()))
 
 
 def test_note_generation_distribution():
     game = RhythmGame(seed=3, highscore=HighScoreStore(os.devnull))
-    rng = random.Random(5)
+    ramp = game.difficulty.ramp_seconds
 
     game.difficulty.at(0.0)
-    game.spawned = 99          # skip the "first two notes are green" rule
-    easy = [game._roll_speed() for _ in range(4000)]
-    easy_values = [game._pick_value() for _ in range(4000)]
-    game.difficulty.at(game.difficulty.ramp_seconds)
-    hard = [game._roll_speed() for _ in range(4000)]
+    easy_values = [game._pick_value() for _ in range(2000)]
+    game.difficulty.at(ramp * VALUE_PHASE)
+    mixed_values = [game._pick_value() for _ in range(2000)]
+    game.difficulty.at(ramp)
     hard_values = [game._pick_value() for _ in range(4000)]
 
-    easy_base = 105.0
-    hard_base = 290.0
-    check("speeds stay above the base speed",
-          min(easy) >= easy_base - 1e-6 and min(hard) >= hard_base - 1e-6)
-    check("fast notes get more likely",
-          sum(1 for value in hard if value > hard_base * 1.3) / len(hard) >
-          sum(1 for value in easy if value > easy_base * 1.3) / len(easy),
-          "hard mean {:.0f} vs easy mean {:.0f}".format(
-              sum(hard) / len(hard), sum(easy) / len(easy)))
-    check("no red notes at difficulty 0", 15 not in easy_values)
-    check("red notes appear at difficulty 1",
-          hard_values.count(15) > 1000, str(hard_values.count(15)))
+    check("only green notes at the start", set(easy_values) == {5},
+          str(sorted(set(easy_values))))
+    check("yellow and red appear once the value stage ends",
+          15 in mixed_values and 20 in mixed_values,
+          "yellow {} red {}".format(mixed_values.count(15),
+                                    mixed_values.count(20)))
+    check("all four values appear at full difficulty",
+          set(hard_values) == {5, 10, 15, 20}, str(sorted(set(hard_values))))
+    check("20 point share is about 25 %",
+          0.20 < hard_values.count(20) / len(hard_values) < 0.30,
+          "{:.2f}".format(hard_values.count(20) / len(hard_values)))
     check("mean value grows", (sum(hard_values) / len(hard_values) >
                                sum(easy_values) / len(easy_values)))
-    check("rng usage does not error", bool(rng))
 
 
 # ---------------------------------------------------------------------------
@@ -393,7 +453,7 @@ def test_spawn_and_fall():
     check("note stays inside its lane",
           0 <= note.x and note.x + note.w <= game.width,
           "{:.0f}".format(note.x))
-    check("note value is a valid score", note.value in (5, 10, 15))
+    check("note value is a valid score", note.value in (5, 10, 15, 20))
     check("note code is in the catalog", value_of_code(note.code) == note.value)
     y_before = note.y
     advance(game, 0.5)
@@ -403,11 +463,11 @@ def test_spawn_and_fall():
 def test_hit_scoring():
     game = RhythmGame(seed=5, highscore=HighScoreStore(os.devnull))
     game.start()
-    code = random_code(15, game.rng)
-    game.notes = [Note(code, 15, 0, 10, 300, 0.0)]
+    code = random_code(20, game.rng)
+    game.notes = [Note(code, 20, 0, 10, 300, 0.0)]
     game.update(1 / 60.0, gesture(code=code))
     check("hit removes the note", not game.notes)
-    check("hit adds the note value", game.score == 15, str(game.score))
+    check("hit adds the note value", game.score == 20, str(game.score))
     check("hit increases combo", game.combo == 1)
     check("hit event emitted", any(event["type"] == "hit"
                                    for event in game.events))

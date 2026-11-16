@@ -32,11 +32,16 @@ DOCS_DIR = os.path.join(ROOT, "docs")
 
 import pygame  # noqa: E402
 
-from game_core import HighScoreStore, RhythmGame  # noqa: E402
+from game_core import HighScoreStore, Note, RhythmGame  # noqa: E402
+from gesture_catalog import CODES_BY_VALUE  # noqa: E402
 from gesture_rhythm import RhythmScene, run  # noqa: E402
 
 #: A valid pose used for the "current gesture" panel when not hitting.
 DISPLAY_CODE = "P00000P00000"
+
+#: One note of every value, staged for the "high difficulty" screenshot so the
+#: documentation always shows all four colours.
+SHOWCASE = ((0, 120, 5), (1, 240, 10), (2, 360, 15), (0, 500, 20))
 
 STATE = {
     "shots": [],
@@ -47,6 +52,7 @@ STATE = {
     "difficulty_forced": False,
     "freeze_at": None,
     "hard_at": None,
+    "showcase_at": None,
     "fail_at": None,
 }
 
@@ -66,6 +72,17 @@ class ScriptedSource(object):
         gesture = SimpleNamespace(code=self.code, both_open=self.both_open,
                                   hand_count=2 if self.code else 0)
         return None, gesture
+
+
+def stage_showcase(game):
+    """Put one note of every value on the field for the documentation shot."""
+    notes = []
+    for lane, y, value in SHOWCASE:
+        code = CODES_BY_VALUE[value][0]
+        x = (lane * game.lane_width +
+             (game.lane_width - game.note_width) / 2.0)
+        notes.append(Note(code, value, lane, x, y, 110.0))
+    game.notes = notes
 
 
 def save_shot(name):
@@ -93,9 +110,13 @@ def make_hook(source):
                 return None
 
             # Stop hitting shortly before the "hard" screenshot so that a few
-            # notes accumulate in the play field for the picture.
+            # notes accumulate in the play field for the picture.  While the
+            # field is frozen the chances are refilled: the picture needs notes
+            # of every value on screen, not a game over.
             freezing = (STATE["freeze_at"] is not None and
                         frame >= STATE["freeze_at"])
+            if freezing:
+                game.chances = game.max_chances
             if freezing or STATE["hit_pause"] > 0:
                 STATE["hit_pause"] = max(0, STATE["hit_pause"] - 1)
                 source.set(code=DISPLAY_CODE)
@@ -115,31 +136,43 @@ def make_hook(source):
             # with a miss flash are skipped so the picture stays readable.
             if not STATE["game_shot"]:
                 if ((frame >= 380 and len(game.notes) >= 3) or
-                        frame >= 700):
+                        frame >= 820):
                     if game.miss_flash <= 0.0:
                         save_shot("screenshot_game.png")
                         STATE["game_shot"] = True
-                    elif frame >= 760:
+                    elif frame >= 880:
                         save_shot("screenshot_game.png")
                         STATE["game_shot"] = True
 
             if STATE["game_shot"] and not STATE["difficulty_forced"]:
-                # Jump close to full difficulty to show all note colours, then
-                # let notes accumulate before the second screenshot.
-                game.elapsed = 66.0
+                # Jump into the speed stage (note mix final, faster fall) and
+                # let a mixed set of notes accumulate for the second picture.
+                game.elapsed = 80.0
+                game.chances = game.max_chances   # keep the run alive
                 STATE["difficulty_forced"] = True
-                STATE["freeze_at"] = frame + 55
-                STATE["hard_at"] = frame + 145
+                STATE["freeze_at"] = frame + 30
+                STATE["hard_at"] = frame + 30
 
             if STATE["hard_at"] is not None and frame >= STATE["hard_at"]:
-                if game.miss_flash <= 0.0 or frame >= STATE["hard_at"] + 120:
-                    save_shot("screenshot_hard.png")
-                    STATE["hard_at"] = None
-                    STATE["fail_at"] = frame + 25
+                # Stage one note of each value and clear the hit effects, then
+                # take the picture once the next frame has been drawn.
+                stage_showcase(game)
+                game.popups = []
+                game.hit_flash = 0.0
+                game.miss_flash = 0.0
+                STATE["hard_at"] = None
+                STATE["showcase_at"] = frame + 2
+
+            if (STATE["showcase_at"] is not None and
+                    frame >= STATE["showcase_at"]):
+                save_shot("screenshot_hard.png")
+                STATE["showcase_at"] = None
+                STATE["fail_at"] = frame + 25
 
             if STATE["fail_at"] is not None and frame >= STATE["fail_at"]:
                 STATE["fail_mode"] = True
                 game.chances = 1
+                game.misses = 0      # the freeze misses are not real play
                 source.set(code=None)
             return None
 

@@ -9,6 +9,7 @@ unit tested without a camera, a display or a sound card.
 from __future__ import absolute_import
 
 import json
+import math
 import random
 
 from gesture_catalog import random_code
@@ -34,11 +35,18 @@ SPAWN_INTERVAL_EASY = 1.90
 SPAWN_INTERVAL_HARD = 0.55
 SPEED_EASY = 105.0
 SPEED_HARD = 290.0
-SPEED_SPREAD = 0.55       # note speed range above the base speed
+SPEED_SPREAD = 0.55       # per-note speed range above the current base speed
+SPEED_WOBBLE = 0.09       # slow fluctuation of the base speed (+-9%)
+SPEED_WOBBLE_RATE = 0.55  # rad/s of that fluctuation
 
-#: Note value probabilities: as easy as possible -> hardest.
-WEIGHTS_EASY = (0.85, 0.15, 0.00)   # 5 / 10 / 15 points
-WEIGHTS_HARD = (0.20, 0.35, 0.45)
+#: Difficulty stages, as fractions of the ramp (only one changes at a time).
+VALUE_PHASE = 0.35        # 0.00-0.35  more valuable note types
+INTERVAL_PHASE = 0.70     # 0.35-0.70  shorter spawn interval
+#                          0.70-1.00  faster falling notes
+
+#: Final note value probabilities (5 / 10 / 15 / 20 points) once the value
+#: stage is over; the higher values fade in one after another before that.
+WEIGHTS_FINAL = (0.20, 0.30, 0.25, 0.25)
 
 
 class Note(object):
@@ -102,40 +110,92 @@ class HighScoreStore(object):
 
 
 class Difficulty(object):
-    """Difficulty curve: everything grows from 0.0 (easy) to 1.0 (hard)."""
+    """Three-stage difficulty ramp.
+
+    Only one parameter changes at a time (positions are fractions of the ramp):
+
+    * ``0.00 - 0.35``  note *variety*: higher value notes are introduced;
+    * ``0.35 - 0.70``  spawn *rate*: the interval gets shorter;
+    * ``0.70 - 1.00``  fall *speed*: the base speed rises (with a wobble).
+
+    Before/after its stage every parameter stays constant, so the player never
+    has to deal with a new note type and a faster screen at the same moment.
+    """
 
     def __init__(self, ramp_seconds=RAMP_SECONDS):
         self.ramp_seconds = float(ramp_seconds)
-        self.value = 0.0
+        self.progress = 0.0
+        self.elapsed = 0.0
 
     def at(self, elapsed):
+        self.elapsed = max(0.0, float(elapsed))
         if self.ramp_seconds <= 0:
-            self.value = 1.0
+            self.progress = 1.0
         else:
-            self.value = max(0.0, min(1.0, elapsed / self.ramp_seconds))
-        return self.value
+            self.progress = max(0.0, min(1.0,
+                                          self.elapsed / self.ramp_seconds))
+        return self.progress
+
+    @property
+    def value(self):
+        return self.progress
+
+    def _stage(self, start, end):
+        if end <= start:
+            return 1.0 if self.progress >= end else 0.0
+        return max(0.0, min(1.0, (self.progress - start) / (end - start)))
+
+    @property
+    def value_progress(self):
+        return self._stage(0.0, VALUE_PHASE)
+
+    @property
+    def interval_progress(self):
+        return self._stage(VALUE_PHASE, INTERVAL_PHASE)
+
+    @property
+    def speed_progress(self):
+        return self._stage(INTERVAL_PHASE, 1.0)
 
     @property
     def level(self):
         """1..10 for the HUD."""
-        return 1 + int(round(self.value * 9))
+        return 1 + int(round(self.progress * 9))
 
     def spawn_interval(self):
         return (SPAWN_INTERVAL_EASY +
-                (SPAWN_INTERVAL_HARD - SPAWN_INTERVAL_EASY) * self.value)
+                (SPAWN_INTERVAL_HARD - SPAWN_INTERVAL_EASY) *
+                self.interval_progress)
 
     def base_speed(self):
-        return SPEED_EASY + (SPEED_HARD - SPEED_EASY) * self.value
+        """Base fall speed for new notes.
+
+        It only rises during the speed stage, and while that stage runs it
+        wobbles slowly around the ramp so the fall speed never becomes a fixed
+        constant.  The wobble is off (factor exactly 1.0) before the stage, so
+        the value/interval stages keep the speed untouched.
+        """
+        base = SPEED_EASY + (SPEED_HARD - SPEED_EASY) * self.speed_progress
+        wobble = 1.0 + (SPEED_WOBBLE * self.speed_progress *
+                        math.sin(self.elapsed * SPEED_WOBBLE_RATE))
+        return base * wobble
 
     def speed_exponent(self):
         """Smaller exponent -> faster notes become more likely."""
-        return 1.0 - 0.65 * self.value
+        return 1.0 - 0.65 * self.speed_progress
 
     def value_weights(self):
-        return tuple(
-            WEIGHTS_EASY[index] +
-            (WEIGHTS_HARD[index] - WEIGHTS_EASY[index]) * self.value
-            for index in range(3))
+        """Probabilities of 5 / 10 / 15 / 20 point notes.
+
+        The higher values fade in one after another while the spawn interval
+        and the fall speed stay untouched.
+        """
+        t = self.value_progress
+        w10 = 0.30 * t
+        w15 = 0.25 * t ** 1.5
+        w20 = 0.25 * t ** 2.0
+        w5 = max(0.0, 1.0 - w10 - w15 - w20)
+        return (w5, w10, w15, w20)
 
 
 class RhythmGame(object):
@@ -184,7 +244,6 @@ class RhythmGame(object):
         self.best_combo = 0
         self.hits = 0
         self.misses = 0
-        self.spawned = 0
         self.elapsed = 0.0
         self.difficulty.at(0.0)
         self.notes = []
@@ -208,7 +267,6 @@ class RhythmGame(object):
         self.best_combo = 0
         self.hits = 0
         self.misses = 0
-        self.spawned = 0
         self.elapsed = 0.0
         self.difficulty.at(0.0)
         self.notes = []
@@ -325,15 +383,14 @@ class RhythmGame(object):
         return best_lane
 
     def _pick_value(self):
-        if self.spawned < 2:
-            return 5
-        w5, w10, w15 = self.difficulty.value_weights()
-        roll = self.rng.random() * (w5 + w10 + w15)
-        if roll < w5:
-            return 5
-        if roll < w5 + w10:
-            return 10
-        return 15
+        weights = self.difficulty.value_weights()
+        roll = self.rng.random()
+        cumulative = 0.0
+        for value, weight in zip((5, 10, 15, 20), weights):
+            cumulative += weight
+            if roll < cumulative:
+                return value
+        return 20
 
     def _roll_speed(self):
         exponent = self.difficulty.speed_exponent()
@@ -351,7 +408,6 @@ class RhythmGame(object):
         note = Note(code, value, lane, x,
                     self.play_top - self.note_height, self._roll_speed())
         self.notes.append(note)
-        self.spawned += 1
         return note
 
     def _try_hit(self, gesture):

@@ -22,16 +22,19 @@ value   rule
         00000                                        (4 + 1 = 5)
 10      both hands share the same pattern from 01000, 01100, 01110,
         01111, 00111 or 11000                   (5 * 1 + 1 * 4 = 9)
-15      the two hands use *different* patterns, both from the 5/10
-        patterns or the extra patterns 11010, 01010, 00101, 01001
-        (12 patterns, thumbs per the rule below)                  (204)
+15      both hands share the same pattern from 11010, 01010, 00101 or
+        01001                                         (4 + 3 = 7)
+20      the two hands use *different* patterns, both from the 12
+        patterns above                           (12 * 11 pairs, thumbs
+                                                   per the rule = 204)
 ======  ==============================================================
 
 An ``N`` hand must have its thumb extended: an outward pointing thumb that is
 folded does not read clearly, so the game never asks for it (``N00000`` and
 friends are not note gestures), while ``P`` hands may keep the thumb folded.
-With that rule the catalog holds 5 + 9 + 204 = 218 gestures.  Any other code
-is a valid *reading* of the hands but not a note gesture: it matches nothing.
+With that rule the catalog holds 5 + 9 + 7 + 204 = 225 gestures.  Any other
+code is a valid *reading* of the hands but not a note gesture: it matches
+nothing.
 """
 
 from __future__ import absolute_import
@@ -44,10 +47,10 @@ import random
 
 PATTERNS_5 = ("11111", "00000")
 PATTERNS_10 = ("01000", "01100", "01110", "01111", "00111", "11000")
-PATTERNS_15_EXTRA = ("11010", "01010", "00101", "01001")
+PATTERNS_15 = ("11010", "01010", "00101", "01001")
 
 #: Every per-hand finger pattern that can appear on a note (12 in total).
-ALL_PATTERNS = PATTERNS_5 + PATTERNS_10 + PATTERNS_15_EXTRA
+ALL_PATTERNS = PATTERNS_5 + PATTERNS_10 + PATTERNS_15
 
 THUMBS = ("P", "N")
 
@@ -55,11 +58,12 @@ THUMBS = ("P", "N")
 VALUE_COLORS = {
     5: (72, 219, 130),
     10: (82, 168, 255),
-    15: (255, 88, 102),
+    15: (250, 200, 70),
+    20: (255, 88, 102),
 }
 
 #: Human readable score names, used by the UI and the reports.
-VALUE_NAMES = {5: "green", 10: "blue", 15: "red"}
+VALUE_NAMES = {5: "green", 10: "blue", 15: "yellow", 20: "red"}
 
 
 def hand_code(thumb, bits):
@@ -113,8 +117,10 @@ def score_for_patterns(left_bits, right_bits):
             return 5
         if left_bits in PATTERNS_10:
             return 10
+        if left_bits in PATTERNS_15:
+            return 15
         return 0
-    return 15
+    return 20
 
 
 def thumb_options(bits):
@@ -143,13 +149,13 @@ def build_catalog():
     return table
 
 
-#: ``{12 character code: 5 | 10 | 15}`` for all note gestures (215).
+#: ``{12 character code: 5 | 10 | 15 | 20}`` for all note gestures (225).
 CATALOG = build_catalog()
 
 #: ``{value: tuple(codes)}`` grouped by score value.
 CODES_BY_VALUE = {
     value: tuple(sorted(code for code, val in CATALOG.items() if val == value))
-    for value in (5, 10, 15)
+    for value in (5, 10, 15, 20)
 }
 
 

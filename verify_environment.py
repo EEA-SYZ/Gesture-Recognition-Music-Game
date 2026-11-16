@@ -79,18 +79,19 @@ def check_catalog():
     from gesture_catalog import CATALOG, CODES_BY_VALUE, value_of_code
 
     sizes = {value: len(codes) for value, codes in CODES_BY_VALUE.items()}
-    record("gesture catalog 218 gestures", len(CATALOG) == 218,
+    record("gesture catalog 225 gestures", len(CATALOG) == 225,
            str(len(CATALOG)))
-    record("score groups 5 / 9 / 204",
+    record("score groups 5 / 9 / 7 / 204",
            sizes.get(5) == 5 and sizes.get(10) == 9 and
-           sizes.get(15) == 204, str(sizes))
+           sizes.get(15) == 7 and sizes.get(20) == 204, str(sizes))
     record("catalog lookup",
            value_of_code("P11111P11111") == 5 and
            value_of_code("P01110P01110") == 10 and
-           value_of_code("P11111P00000") == 15 and
+           value_of_code("P11010P11010") == 15 and
+           value_of_code("P11111P00000") == 20 and
            value_of_code("N00000P00000") == 0,
-           "P11111P11111=5, P01110P01110=10, P11111P00000=15, "
-           "N-folded=0")
+           "P11111P11111=5, P01110P01110=10, P11010P11010=15, "
+           "P11111P00000=20, N-folded=0")
 
 
 def check_gesture():

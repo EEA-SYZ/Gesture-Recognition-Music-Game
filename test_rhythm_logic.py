@@ -261,8 +261,8 @@ def test_finger_metrics():
     """Folding is decided by the joint angles (PIP + DIP) of the finger."""
     import numpy as np
 
-    from gesture_twohands import finger_angles, _finger_extended, \
-        _thumb_extended
+    from gesture_twohands import (finger_angles, thumb_bend_towards_palm,
+                                  _finger_extended, _thumb_extended)
 
     def chain(mcp, pip, dip, tip):
         pts = np.zeros((21, 3), dtype=np.float32)
@@ -310,6 +310,24 @@ def test_finger_metrics():
     thumb[4] = (0.15, -0.55, 0.0)   # resting on the palm, still straight
     check("thumb resting on the palm is folded",
           not _thumb_extended(thumb, palm_center, 1.0))
+
+    # Hyperextension: the tip bends *away* from the palm.  The unsigned IP
+    # angle drops below the fold threshold, but the thumb is still out.
+    palm = np.array([-0.30, -0.20, 0.0], dtype=np.float32)
+    thumb[2] = (0.0, -0.50, 0.0)
+    thumb[3] = (0.20, -0.60, 0.0)
+    thumb[4] = (0.25, -0.75, 0.0)
+    check("hyperextended thumb is still extended",
+          _thumb_extended(thumb, palm, 1.0),
+          "bend={:.2f}".format(thumb_bend_towards_palm(thumb, palm)))
+    check("hyperextension bends away from the palm",
+          thumb_bend_towards_palm(thumb, palm) < 0.0,
+          "{:.2f}".format(thumb_bend_towards_palm(thumb, palm)))
+    # Flexion towards the palm must still count as folded.
+    thumb[4] = (0.35, -0.55, 0.0)
+    check("flexed thumb is folded",
+          not _thumb_extended(thumb, palm, 1.0),
+          "bend={:.2f}".format(thumb_bend_towards_palm(thumb, palm)))
 
 
 def test_smoothing():

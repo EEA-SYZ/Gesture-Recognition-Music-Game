@@ -51,11 +51,16 @@ FOLD_ANGLE = 158.0
 FOLD_ANGLE_DIP = 140.0
 #: Thumb tip distance from the palm centre, relative to the palm size.  The
 #: thumb folds by rotating at its base, which no chain angle can see, so its
-#: distance from the palm is used instead.  Resting on the fingers ~0.4-0.65,
-#: a spread thumb ~0.9-1.1.
+#: distance from the palm is used as a second signal.  Resting on the fingers
+#: ~0.4-0.65, a spread thumb ~0.9-1.1.
 THUMB_PALM_RATIO = 0.72
-#: Thumb IP angle (degrees) below which the thumb counts as curled.
+#: Thumb IP angle (degrees) below which the thumb may be curled.
 THUMB_FOLD_ANGLE = 150.0
+#: How far the thumb's distal phalanx has to bend *towards the palm* before a
+#: small IP angle counts as folding instead of hyperextension.  The signed
+#: bend is the projection (in [-1, 1]) of the bend direction on the
+#: "thumb base -> palm centre" direction; hyperextension points the other way.
+THUMB_FLEXION_MIN = 0.10
 #: Horizontal thumb offset (relative to palm size) that is unambiguous.
 THUMB_SIDE_RATIO = 0.22
 #: Number of frames used by the per-hand majority vote.
@@ -114,15 +119,45 @@ def _finger_extended(pts, mcp, pip, dip, tip):
     return pip_angle >= FOLD_ANGLE and dip_angle >= FOLD_ANGLE_DIP
 
 
+def thumb_bend_towards_palm(pts, palm_center):
+    """Signed bend of the thumb's distal phalanx, relative to the palm.
+
+    The unsigned IP angle cannot tell flexion from hyperextension: both reduce
+    it.  This helper projects the bend of the distal phalanx on the
+    "thumb base -> palm centre" direction and returns a value in ``[-1, 1]``:
+    positive means the tip curls towards the palm (flexion, i.e. folding),
+    negative means it bends away from the palm (hyperextension, still out).
+    """
+    proximal = pts[THUMB_IP] - pts[THUMB_MCP]
+    distal = pts[THUMB_TIP] - pts[THUMB_IP]
+    n1 = float(np.linalg.norm(proximal))
+    n2 = float(np.linalg.norm(distal))
+    if n1 < 1e-9 or n2 < 1e-9:
+        return 0.0
+    unit_proximal = proximal / n1
+    unit_distal = distal / n2
+    bend = unit_distal - unit_proximal * float(
+        np.dot(unit_distal, unit_proximal))
+    towards_palm = palm_center - pts[THUMB_MCP]
+    n3 = float(np.linalg.norm(towards_palm))
+    if n3 < 1e-9:
+        return 0.0
+    return float(np.dot(bend, towards_palm / n3))
+
+
 def _thumb_extended(pts, palm_center, palm_size):
     """The thumb is out when it is straight and clearly away from the palm.
 
     A thumb folded over the fingers keeps its own joints almost straight (it
     rotates at the base of the hand), so the distance from the palm centre is
-    the discriminating measurement here.
+    the main measurement.  A small IP angle is only read as folding when the
+    distal phalanx bends *towards* the palm; a hyperextended thumb (bent
+    backwards) reduces the unsigned angle just as well but is still extended.
     """
     angle = _joint_angle(pts[THUMB_MCP], pts[THUMB_IP], pts[THUMB_TIP])
-    if angle < THUMB_FOLD_ANGLE:
+    flexed = (angle < THUMB_FOLD_ANGLE and
+              thumb_bend_towards_palm(pts, palm_center) > THUMB_FLEXION_MIN)
+    if flexed:
         return False
     distance = float(np.linalg.norm(pts[THUMB_TIP] - palm_center)) / palm_size
     return distance >= THUMB_PALM_RATIO

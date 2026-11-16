@@ -9,7 +9,6 @@ unit tested without a camera, a display or a sound card.
 from __future__ import absolute_import
 
 import json
-import math
 import random
 
 from gesture_catalog import random_code
@@ -31,25 +30,26 @@ HOLD_SECONDS = 0.7        # the P11111P11111 pose held this long starts the game
 HIT_COOLDOWN = 0.22       # seconds between two matches of the same gesture
 POPUP_TTL = 0.85
 
-SPAWN_INTERVAL_EASY = 1.90
-SPAWN_INTERVAL_MID = 1.10    # end of the 30-60 s stage (not the limit yet)
-SPAWN_INTERVAL_HARD = 0.55
-SPEED_EASY = 105.0
-SPEED_MID = 175.0            # end of the 30-60 s stage (not the limit yet)
-SPEED_HARD = 290.0
-SPEED_SPREAD = 0.55          # per-note speed range above the current base speed
-SPEED_WOBBLE = 0.09          # slow fluctuation of the base speed (up to +-9%)
-SPEED_WOBBLE_RATE = 0.55     # rad/s of that fluctuation
+#: Base fall speed (px/s) and spawn interval (s) at the stage boundaries.
+SPEED_START, SPEED_MID, SPEED_END = 100.0, 160.0, 240.0
+INTERVAL_START, INTERVAL_MID, INTERVAL_END = 2.0, 1.2, 0.65
+
+#: Random fluctuation (absolute, uniform) of the speed and of the interval.
+#: The three entries are the values used in the three stages.
+SPEED_JITTER = (20.0, 15.0, 20.0)
+INTERVAL_JITTER = (0.2, 0.15, 0.2)
 
 #: Stage boundaries as fractions of the 90 s ramp: 0-30 s, 30-60 s, 60-90 s.
 STAGE_1 = 1.0 / 3.0
 STAGE_2 = 2.0 / 3.0
 
-#: Note value probabilities when the first (variety) stage ends: 5 / 10 / 15,
-#: still no red 20 note.  The 20 point share then fades in during the last
-#: stage together with the final interval and speed.
-WEIGHTS_STAGE_1_END = (0.35, 0.35, 0.30, 0.00)
-WEIGHTS_FINAL = (0.20, 0.30, 0.25, 0.25)
+#: Note value probabilities (5 / 10 / 15 / 20) at the stage boundaries.
+WEIGHTS_EARLY = (1.00, 0.00, 0.00, 0.00)
+WEIGHTS_MID = (0.20, 0.45, 0.35, 0.00)
+WEIGHTS_LATE = (0.15, 0.30, 0.30, 0.25)
+
+#: Special red notes: one at 20 s and one at 45 s (fractions of the ramp).
+RED_MILESTONES = (20.0 / 90.0, 45.0 / 90.0)
 
 
 class Note(object):
@@ -115,16 +115,17 @@ class HighScoreStore(object):
 class Difficulty(object):
     """Three-stage difficulty ramp (90 s by default).
 
-    * ``0-30 s``   note *variety* only: 10 and 15 point notes fade in, the
-      spawn interval and the fall speed stay at their easiest values and the
-      red 20 point notes do not appear at all;
-    * ``30-60 s``  spawn *rate* and fall *speed* rise together, but only up to
-      a mid value - neither reaches its limit yet;
-    * ``60-90 s``  the red 20 point notes fade in while the interval and the
-      fall speed are pushed to their limits.
+    * ``0-30 s``   note value mix only: 5 / 10 / 15 weights go from
+      (1, 0, 0) to (0.20, 0.45, 0.35), no red note (20) yet; fall speed
+      stays at 100 px/s and the spawn interval at 2.0 s;
+    * ``30-60 s``  fall speed 100 -> 160 px/s and spawn interval 2.0 -> 1.2 s
+      rise together; the value weights stay at (0.20, 0.45, 0.35);
+    * ``60-90 s``  value weights go to (0.15, 0.30, 0.30, 0.25), speed
+      160 -> 240 px/s and interval 1.2 -> 0.65 s.
 
-    The stage boundaries are fractions of the ramp (``STAGE_1``/``STAGE_2``),
-    so the default 90 s timeline is exactly 0-30-60-90 seconds.
+    Every note speed / spawn interval gets a random fluctuation around the
+    stage value (``SPEED_JITTER`` / ``INTERVAL_JITTER``).  Two special red
+    notes are spawned at 20 s and 45 s (``RED_MILESTONES``).
     """
 
     def __init__(self, ramp_seconds=RAMP_SECONDS):
@@ -171,66 +172,43 @@ class Difficulty(object):
         return 1 + int(round(self.progress * 9))
 
     def spawn_interval(self):
+        """Base spawn interval (seconds) of the current stage."""
         stage, t = self.stage, self.stage_t
         if stage == 0:
-            return SPAWN_INTERVAL_EASY
+            return INTERVAL_START
         if stage == 1:
-            return (SPAWN_INTERVAL_EASY +
-                    (SPAWN_INTERVAL_MID - SPAWN_INTERVAL_EASY) * t)
-        return (SPAWN_INTERVAL_MID +
-                (SPAWN_INTERVAL_HARD - SPAWN_INTERVAL_MID) * t)
+            return INTERVAL_START + (INTERVAL_MID - INTERVAL_START) * t
+        return INTERVAL_MID + (INTERVAL_END - INTERVAL_MID) * t
 
-    def _base_speed_ramp(self):
-        stage, t = self.stage, self.stage_t
-        if stage == 0:
-            return SPEED_EASY
-        if stage == 1:
-            return SPEED_EASY + (SPEED_MID - SPEED_EASY) * t
-        return SPEED_MID + (SPEED_HARD - SPEED_MID) * t
-
-    @property
-    def speed_ramp(self):
-        """0..1 across the whole speed range (105..290 px/s)."""
-        span = SPEED_HARD - SPEED_EASY
-        if span <= 0:
-            return 1.0
-        return max(0.0, min(1.0, (self._base_speed_ramp() - SPEED_EASY) / span))
+    def interval_jitter(self):
+        """Half-width (seconds) of the random interval fluctuation."""
+        return INTERVAL_JITTER[self.stage]
 
     def base_speed(self):
-        """Base fall speed for new notes.
+        """Base fall speed (px/s) of the current stage."""
+        stage, t = self.stage, self.stage_t
+        if stage == 0:
+            return SPEED_START
+        if stage == 1:
+            return SPEED_START + (SPEED_MID - SPEED_START) * t
+        return SPEED_MID + (SPEED_END - SPEED_MID) * t
 
-        From 30 s on it wobbles slowly around the ramp so the fall speed never
-        feels like a fixed constant; during the variety stage it is exactly
-        ``SPEED_EASY``.
-        """
-        base = self._base_speed_ramp()
-        wobble = 1.0 + (SPEED_WOBBLE * self.speed_ramp *
-                        math.sin(self.elapsed * SPEED_WOBBLE_RATE))
-        return base * wobble
+    def speed_jitter(self):
+        """Half-width (px/s) of the random speed fluctuation."""
+        return SPEED_JITTER[self.stage]
 
-    def speed_exponent(self):
-        """Smaller exponent -> faster notes become more likely."""
-        return 1.0 - 0.65 * self.speed_ramp
+    @staticmethod
+    def _mix(start, end, t):
+        return tuple(a + (b - a) * t for a, b in zip(start, end))
 
     def value_weights(self):
         """Probabilities of 5 / 10 / 15 / 20 point notes."""
         stage, t = self.stage, self.stage_t
         if stage == 0:
-            w10 = 0.35 * t
-            w15 = 0.30 * t ** 1.5
-            w20 = 0.0
-        elif stage == 1:
-            w10 = WEIGHTS_STAGE_1_END[1]
-            w15 = WEIGHTS_STAGE_1_END[2]
-            w20 = 0.0
-        else:
-            w10 = (WEIGHTS_STAGE_1_END[1] +
-                   (WEIGHTS_FINAL[1] - WEIGHTS_STAGE_1_END[1]) * t)
-            w15 = (WEIGHTS_STAGE_1_END[2] +
-                   (WEIGHTS_FINAL[2] - WEIGHTS_STAGE_1_END[2]) * t)
-            w20 = WEIGHTS_FINAL[3] * t
-        w5 = max(0.0, 1.0 - w10 - w15 - w20)
-        return (w5, w10, w15, w20)
+            return self._mix(WEIGHTS_EARLY, WEIGHTS_MID, t)
+        if stage == 1:
+            return WEIGHTS_MID
+        return self._mix(WEIGHTS_MID, WEIGHTS_LATE, t)
 
 
 class RhythmGame(object):
@@ -279,7 +257,7 @@ class RhythmGame(object):
         self.best_combo = 0
         self.hits = 0
         self.misses = 0
-        self.red_introduced = False
+        self.red_milestones_fired = 0
         self.elapsed = 0.0
         self.difficulty.at(0.0)
         self.notes = []
@@ -303,7 +281,7 @@ class RhythmGame(object):
         self.best_combo = 0
         self.hits = 0
         self.misses = 0
-        self.red_introduced = False
+        self.red_milestones_fired = 0
         self.elapsed = 0.0
         self.difficulty.at(0.0)
         self.notes = []
@@ -381,12 +359,13 @@ class RhythmGame(object):
         if self.hit_cooldown > 0:
             self.hit_cooldown = max(0.0, self.hit_cooldown - dt)
 
-        # One red note is introduced exactly when the second stage begins
-        # (30 s of the default 90 s ramp), even though red notes only start
-        # appearing randomly in the last stage.
-        if not self.red_introduced and self.difficulty.progress >= STAGE_1:
+        # Special red notes at 20 s and 45 s (a red note for the first time,
+        # well before red notes start appearing randomly in the last stage).
+        while (self.red_milestones_fired < len(RED_MILESTONES) and
+               self.difficulty.progress >=
+               RED_MILESTONES[self.red_milestones_fired]):
             self._spawn_note(value=20)
-            self.red_introduced = True
+            self.red_milestones_fired += 1
 
         # Spawn.
         self.spawn_timer -= dt
@@ -437,12 +416,16 @@ class RhythmGame(object):
         return 20
 
     def _roll_speed(self):
-        exponent = self.difficulty.speed_exponent()
-        return self.difficulty.base_speed() * (
-            1.0 + SPEED_SPREAD * self.rng.random() ** exponent)
+        """Base speed of the stage plus a random fluctuation."""
+        base = self.difficulty.base_speed()
+        jitter = self.difficulty.speed_jitter()
+        return base + self.rng.uniform(-jitter, jitter)
 
     def _next_interval(self):
-        return self.difficulty.spawn_interval() * self.rng.uniform(0.85, 1.15)
+        """Base interval of the stage plus a random fluctuation."""
+        base = self.difficulty.spawn_interval()
+        jitter = self.difficulty.interval_jitter()
+        return max(0.30, base + self.rng.uniform(-jitter, jitter))
 
     def _spawn_note(self, value=None):
         if value is None:

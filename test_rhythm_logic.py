@@ -64,12 +64,12 @@ def test_examples_from_requirements():
         "P01111P01111", "P00111P00111",
     }
     fifteen = {
-        "P10000P10000", "P11000P11000", "P11100P11100",
-        "N10000N10000", "P10000N10000", "N11000P11000",
+        "P10000P10000", "P11000P11000", "P11100P11100", "P11001P11001",
+        "N10000N10000", "P10000N10000", "N11000P11000", "N11001N11001",
     }
     twenty = {
         "P11111P00000", "P01000P01100", "P10000P01000", "P00111N11111",
-        "P11000N11111", "P11100P01110",
+        "P11000N11111", "P11100P01110", "P11001P01000",
     }
     for code in sorted(five):
         check("5 points {}".format(format_code(code)),
@@ -104,12 +104,12 @@ def test_examples_from_requirements():
 
 
 def test_catalog_sizes_and_consistency():
-    check("catalog total is 196", len(CATALOG) == 196, str(len(CATALOG)))
+    check("catalog total is 256", len(CATALOG) == 256, str(len(CATALOG)))
     sizes = {value: len(codes) for value, codes in CODES_BY_VALUE.items()}
     check("5 green gestures", sizes[5] == 5, str(sizes[5]))
     check("5 blue gestures", sizes[10] == 5, str(sizes[10]))
-    check("12 yellow gestures", sizes[15] == 12, str(sizes[15]))
-    check("174 red gestures", sizes[20] == 174, str(sizes[20]))
+    check("16 yellow gestures", sizes[15] == 16, str(sizes[15]))
+    check("230 red gestures", sizes[20] == 230, str(sizes[20]))
     check("categories are disjoint",
           not (set(CODES_BY_VALUE[5]) & set(CODES_BY_VALUE[10])) and
           not (set(CODES_BY_VALUE[10]) & set(CODES_BY_VALUE[15])) and
@@ -133,7 +133,7 @@ def test_catalog_sizes_and_consistency():
     check("catalog rule consistency", not wrong, str(wrong[:4]))
     check("all patterns used", set(PATTERNS_5 + PATTERNS_10 +
                                    PATTERNS_15) == set(ALL_PATTERNS))
-    check("10 per-hand patterns", len(ALL_PATTERNS) == 10)
+    check("11 per-hand patterns", len(ALL_PATTERNS) == 11)
     check("every N hand has the thumb out",
           all(parse_hand(code[6:])[0] != "N" or
               parse_hand(code[6:])[1][0] == "1"

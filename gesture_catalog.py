@@ -22,17 +22,17 @@ value   rule
         00000                                        (4 + 1 = 5)
 10      both hands share the same pattern from 01000, 01100, 01110,
         01111 or 00111                                    (5 * 1 = 5)
-15      both hands share the same pattern from 10000, 11000 or 11100
-                                                   (3 * 4 = 12)
-20      the two hands use *different* patterns, both from the 10
-        patterns above                           (10 * 9 pairs, thumbs
-                                                   per the rule = 174)
+15      both hands share the same pattern from 10000, 11000, 11100 or
+        11001                                             (4 * 4 = 16)
+20      the two hands use *different* patterns, both from the 11
+        patterns above                           (11 * 10 pairs, thumbs
+                                                   per the rule = 230)
 ======  ==============================================================
 
 An ``N`` hand must have its thumb extended: an outward pointing thumb that is
 folded does not read clearly, so the game never asks for it (``N00000`` and
 friends are not note gestures), while ``P`` hands may keep the thumb folded.
-With that rule the catalog holds 5 + 5 + 12 + 174 = 196 gestures.  Any other
+With that rule the catalog holds 5 + 5 + 16 + 230 = 256 gestures.  Any other
 code is a valid *reading* of the hands but not a note gesture: it matches
 nothing.
 """
@@ -47,9 +47,9 @@ import random
 
 PATTERNS_5 = ("11111", "00000")
 PATTERNS_10 = ("01000", "01100", "01110", "01111", "00111")
-PATTERNS_15 = ("10000", "11000", "11100")
+PATTERNS_15 = ("10000", "11000", "11100", "11001")
 
-#: Every per-hand finger pattern that can appear on a note (10 in total).
+#: Every per-hand finger pattern that can appear on a note (11 in total).
 ALL_PATTERNS = PATTERNS_5 + PATTERNS_10 + PATTERNS_15
 
 THUMBS = ("P", "N")

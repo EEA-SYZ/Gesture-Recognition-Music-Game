@@ -79,11 +79,11 @@ def check_catalog():
     from gesture_catalog import CATALOG, CODES_BY_VALUE, value_of_code
 
     sizes = {value: len(codes) for value, codes in CODES_BY_VALUE.items()}
-    record("gesture catalog 196 gestures", len(CATALOG) == 196,
+    record("gesture catalog 256 gestures", len(CATALOG) == 256,
            str(len(CATALOG)))
-    record("score groups 5 / 5 / 12 / 174",
+    record("score groups 5 / 5 / 16 / 230",
            sizes.get(5) == 5 and sizes.get(10) == 5 and
-           sizes.get(15) == 12 and sizes.get(20) == 174, str(sizes))
+           sizes.get(15) == 16 and sizes.get(20) == 230, str(sizes))
     record("catalog lookup",
            value_of_code("P11111P11111") == 5 and
            value_of_code("P01110P01110") == 10 and

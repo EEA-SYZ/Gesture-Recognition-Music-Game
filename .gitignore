@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.log
+
+# 本地最高分（玩家数据，不属于源码）
+highscore.json
+
+# check_camera.py 生成的摄像头快照
+camera_snapshot.png

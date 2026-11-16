@@ -1,0 +1,18 @@
+# 手势音游运行依赖（Python 3.12 / Windows 10-11 64 位）
+#
+# MediaPipe 0.10.21 由 setup_env.bat 用 --no-deps 单独安装（见
+# requirements-mediapipe.txt），所以它依赖的基础包要在这里显式列出；
+# 这里只装 opencv-python 而不是 opencv-contrib-python。
+numpy==1.26.4
+opencv-python==4.10.0.84
+pygame==2.6.1
+# mediapipe.solutions.drawing_utils 会 import matplotlib
+matplotlib==3.10.0
+# MediaPipe Hands 的运行时依赖
+protobuf==4.25.3
+absl-py==2.1.0
+attrs==24.3.0
+flatbuffers==24.12.23
+sentencepiece==0.2.0
+# MediaPipe 声明的依赖（本项目不直接使用）
+sounddevice==0.5.1

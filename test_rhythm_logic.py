@@ -19,8 +19,8 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 os.chdir(ROOT)
 
-from game_core import (INTERVAL_PHASE, SPEED_EASY, HighScoreStore,  # noqa
-                       Note, PLAY_BOTTOM, PLAY_TOP, RhythmGame, VALUE_PHASE)
+from game_core import (SPEED_EASY, STAGE_1, STAGE_2, HighScoreStore,  # noqa
+                       Note, PLAY_BOTTOM, PLAY_TOP, RhythmGame)
 from gesture_catalog import (ALL_PATTERNS, CATALOG, CODES_BY_VALUE,  # noqa
                              PATTERNS_5, PATTERNS_10, PATTERNS_15,
                              describe, format_code, hand_code,
@@ -318,58 +318,77 @@ def test_smoothing():
 def test_difficulty_curve():
     game = RhythmGame(seed=1, ramp_seconds=90.0,
                       highscore=HighScoreStore(os.devnull))
-    ramp = game.difficulty.ramp_seconds
-    check("difficulty starts at 0", game.difficulty.at(0.0) == 0.0)
-    check("difficulty halfway", abs(game.difficulty.at(45.0) - 0.5) < 1e-6)
-    check("difficulty caps at 1", game.difficulty.at(500.0) == 1.0)
+    difficulty = game.difficulty
+    ramp = difficulty.ramp_seconds
+    check("difficulty starts at 0", difficulty.at(0.0) == 0.0)
+    check("difficulty halfway", abs(difficulty.at(45.0) - 0.5) < 1e-6)
+    check("difficulty caps at 1", difficulty.at(500.0) == 1.0)
 
-    game.difficulty.at(0.0)
-    start = (game.difficulty.spawn_interval(),
-             game.difficulty.base_speed(),
-             game.difficulty.value_weights())
-    game.difficulty.at(ramp * VALUE_PHASE)
-    after_values = (game.difficulty.spawn_interval(),
-                    game.difficulty.base_speed(),
-                    game.difficulty.value_weights())
-    game.difficulty.at(ramp * INTERVAL_PHASE)
-    after_interval = (game.difficulty.spawn_interval(),
-                      game.difficulty.base_speed(),
-                      game.difficulty.value_weights())
-    game.difficulty.at(ramp)
-    final = (game.difficulty.spawn_interval(),
-             game.difficulty.base_speed(),
-             game.difficulty.value_weights())
+    def snapshot(seconds):
+        difficulty.at(seconds)
+        return (difficulty.spawn_interval(), difficulty.base_speed(),
+                difficulty.value_weights())
 
-    check("value stage only changes the note mix",
-          (start[0], start[1]) == (after_values[0], after_values[1]) and
-          after_values[2] != start[2],
-          "weights {} -> {}".format(start[2], after_values[2]))
-    check("interval stage only changes the spawn interval",
-          after_values[2] == after_interval[2] and
-          after_values[1] == after_interval[1] and
-          after_interval[0] < after_values[0],
-          "{:.2f} -> {:.2f}".format(after_values[0], after_interval[0]))
-    check("speed stage only changes the fall speed",
-          final[0] == after_interval[0] and
-          final[2] == after_interval[2] and
-          final[1] > after_interval[1],
-          "{:.0f} -> {:.0f}".format(after_interval[1], final[1]))
+    start = snapshot(0.0)                 # 0 s
+    at_15 = snapshot(ramp * STAGE_1 * 0.5)   # 15 s
+    at_30 = snapshot(ramp * STAGE_1)          # 30 s
+    at_45 = snapshot(ramp * 0.5)              # 45 s
+    at_60 = snapshot(ramp * STAGE_2)          # 60 s
+    at_75 = snapshot(ramp * 0.9)              # 81 s
+    final = snapshot(ramp)                    # 90 s
 
-    check("starts with green notes only", start[2][0] == 1.0)
-    check("value mix reaches 20/30/25/25",
+    # 0-30 s: only the note mix changes, and no red note is introduced.
+    check("variety stage keeps the interval",
+          at_15[0] == start[0] == at_30[0],
+          "{:.2f}".format(at_30[0]))
+    check("variety stage keeps the fall speed",
+          at_15[1] == start[1] == at_30[1],
+          "{:.0f}".format(at_30[1]))
+    check("variety stage introduces 10 and 15 point notes",
+          at_15[2][1] > 0 and at_15[2][2] > 0, str(at_15[2]))
+    check("no red notes during the variety stage",
+          at_15[2][3] == 0 and at_30[2][3] == 0 and at_45[2][3] == 0,
+          "{} / {}".format(at_30[2], at_45[2]))
+    check("mix at 30 s is 35/35/30/0",
+          all(abs(a - b) < 1e-9 for a, b in
+              zip(at_30[2], (0.35, 0.35, 0.30, 0.0))), str(at_30[2]))
+
+    # 30-60 s: interval and speed rise together, but not to the limit yet.
+    check("interval speeds up in the middle stage",
+          at_45[0] < at_30[0] and at_45[0] > at_60[0],
+          "{:.2f} > {:.2f} > {:.2f}".format(at_30[0], at_45[0], at_60[0]))
+    check("fall speed rises in the middle stage",
+          at_45[1] > at_30[1] and at_45[1] < at_60[1],
+          "{:.0f} < {:.0f} < {:.0f}".format(at_30[1], at_45[1], at_60[1]))
+    check("middle stage does not reach the interval limit",
+          abs(at_60[0] - 1.10) < 1e-9 and at_60[0] > 0.55,
+          "{:.2f}".format(at_60[0]))
+    check("middle stage does not reach the speed limit",
+          abs(at_60[1] - 175.0) < 20.0 and at_60[1] < 290.0,
+          "{:.0f}".format(at_60[1]))
+    check("middle stage keeps the note mix",
+          at_45[2] == at_30[2] == at_60[2], str(at_60[2]))
+
+    # 60-90 s: red notes fade in while interval and speed reach their limits.
+    check("red notes start exactly at 60 s",
+          at_60[2][3] == 0.0 and at_75[2][3] > 0.0,
+          "{} -> {}".format(at_60[2], at_75[2]))
+    check("interval reaches its limit", abs(final[0] - 0.55) < 1e-9,
+          "{:.2f}".format(final[0]))
+    check("fall speed reaches its limit", abs(final[1] - 290.0) < 30.0,
+          "{:.0f}".format(final[1]))
+    check("final mix is 20/30/25/25",
           all(abs(a - b) < 1e-9 for a, b in
               zip(final[2], (0.20, 0.30, 0.25, 0.25))), str(final[2]))
     check("weights sum to 1", abs(sum(final[2]) - 1.0) < 1e-9)
-    check("spawn interval shrinks", final[0] < start[0],
-          "{:.2f} -> {:.2f}".format(start[0], final[0]))
-    check("fall speed grows", final[1] > start[1],
-          "{:.0f} -> {:.0f}".format(start[1], final[1]))
-    check("hud level reaches 10", game.difficulty.at(ramp) and
-          game.difficulty.level == 10)
+    check("starts with green notes only", start[2][0] == 1.0)
+    check("hud level reaches 10", difficulty.at(ramp) and
+          difficulty.level == 10)
 
 
 def test_speed_fluctuation():
     game = RhythmGame(seed=2, highscore=HighScoreStore(os.devnull))
+    ramp = game.difficulty.ramp_seconds
     game.difficulty.at(0.0)
     first = game._roll_speed()
     speeds = [game._roll_speed() for _ in range(200)]
@@ -378,16 +397,15 @@ def test_speed_fluctuation():
     check("speed is never below the base",
           min(speeds) >= game.difficulty.base_speed() - 1e-6)
 
-    # The base speed itself wobbles while the speed stage is running.
-    ramp = game.difficulty.ramp_seconds
+    # The base speed wobbles while it is rising (from 30 s on).
     game.difficulty.at(ramp * 0.85)
     early = game.difficulty.base_speed()
     game.difficulty.at(ramp * 0.85 + 3.0)
     later = game.difficulty.base_speed()
-    check("base speed wobbles during the speed stage", abs(later - early) > 1.0,
+    check("base speed wobbles while rising", abs(later - early) > 1.0,
           "{:.1f} -> {:.1f} (first {:.1f})".format(early, later, first))
     game.difficulty.at(ramp * 0.2)
-    check("base speed is the easy speed before the speed stage",
+    check("base speed is exactly the easy speed before 30 s",
           game.difficulty.base_speed() == SPEED_EASY,
           "{:.1f}".format(game.difficulty.base_speed()))
 
@@ -398,17 +416,21 @@ def test_note_generation_distribution():
 
     game.difficulty.at(0.0)
     easy_values = [game._pick_value() for _ in range(2000)]
-    game.difficulty.at(ramp * VALUE_PHASE)
-    mixed_values = [game._pick_value() for _ in range(2000)]
+    game.difficulty.at(ramp * 0.5)      # 45 s, middle stage
+    middle_values = [game._pick_value() for _ in range(2000)]
+    game.difficulty.at(ramp * 0.9)      # 81 s, last stage
+    late_values = [game._pick_value() for _ in range(2000)]
     game.difficulty.at(ramp)
     hard_values = [game._pick_value() for _ in range(4000)]
 
     check("only green notes at the start", set(easy_values) == {5},
           str(sorted(set(easy_values))))
-    check("yellow and red appear once the value stage ends",
-          15 in mixed_values and 20 in mixed_values,
-          "yellow {} red {}".format(mixed_values.count(15),
-                                    mixed_values.count(20)))
+    check("yellow appears in the middle stage but no red",
+          15 in middle_values and 20 not in middle_values,
+          "yellow {} red {}".format(middle_values.count(15),
+                                    middle_values.count(20)))
+    check("red appears in the last stage", 20 in late_values,
+          "red {}".format(late_values.count(20)))
     check("all four values appear at full difficulty",
           set(hard_values) == {5, 10, 15, 20}, str(sorted(set(hard_values))))
     check("20 point share is about 25 %",

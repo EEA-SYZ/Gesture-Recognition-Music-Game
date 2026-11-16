@@ -32,20 +32,23 @@ HIT_COOLDOWN = 0.22       # seconds between two matches of the same gesture
 POPUP_TTL = 0.85
 
 SPAWN_INTERVAL_EASY = 1.90
+SPAWN_INTERVAL_MID = 1.10    # end of the 30-60 s stage (not the limit yet)
 SPAWN_INTERVAL_HARD = 0.55
 SPEED_EASY = 105.0
+SPEED_MID = 175.0            # end of the 30-60 s stage (not the limit yet)
 SPEED_HARD = 290.0
-SPEED_SPREAD = 0.55       # per-note speed range above the current base speed
-SPEED_WOBBLE = 0.09       # slow fluctuation of the base speed (+-9%)
-SPEED_WOBBLE_RATE = 0.55  # rad/s of that fluctuation
+SPEED_SPREAD = 0.55          # per-note speed range above the current base speed
+SPEED_WOBBLE = 0.09          # slow fluctuation of the base speed (up to +-9%)
+SPEED_WOBBLE_RATE = 0.55     # rad/s of that fluctuation
 
-#: Difficulty stages, as fractions of the ramp (only one changes at a time).
-VALUE_PHASE = 0.35        # 0.00-0.35  more valuable note types
-INTERVAL_PHASE = 0.70     # 0.35-0.70  shorter spawn interval
-#                          0.70-1.00  faster falling notes
+#: Stage boundaries as fractions of the 90 s ramp: 0-30 s, 30-60 s, 60-90 s.
+STAGE_1 = 1.0 / 3.0
+STAGE_2 = 2.0 / 3.0
 
-#: Final note value probabilities (5 / 10 / 15 / 20 points) once the value
-#: stage is over; the higher values fade in one after another before that.
+#: Note value probabilities when the first (variety) stage ends: 5 / 10 / 15,
+#: still no red 20 note.  The 20 point share then fades in during the last
+#: stage together with the final interval and speed.
+WEIGHTS_STAGE_1_END = (0.35, 0.35, 0.30, 0.00)
 WEIGHTS_FINAL = (0.20, 0.30, 0.25, 0.25)
 
 
@@ -110,16 +113,18 @@ class HighScoreStore(object):
 
 
 class Difficulty(object):
-    """Three-stage difficulty ramp.
+    """Three-stage difficulty ramp (90 s by default).
 
-    Only one parameter changes at a time (positions are fractions of the ramp):
+    * ``0-30 s``   note *variety* only: 10 and 15 point notes fade in, the
+      spawn interval and the fall speed stay at their easiest values and the
+      red 20 point notes do not appear at all;
+    * ``30-60 s``  spawn *rate* and fall *speed* rise together, but only up to
+      a mid value - neither reaches its limit yet;
+    * ``60-90 s``  the red 20 point notes fade in while the interval and the
+      fall speed are pushed to their limits.
 
-    * ``0.00 - 0.35``  note *variety*: higher value notes are introduced;
-    * ``0.35 - 0.70``  spawn *rate*: the interval gets shorter;
-    * ``0.70 - 1.00``  fall *speed*: the base speed rises (with a wobble).
-
-    Before/after its stage every parameter stays constant, so the player never
-    has to deal with a new note type and a faster screen at the same moment.
+    The stage boundaries are fractions of the ramp (``STAGE_1``/``STAGE_2``),
+    so the default 90 s timeline is exactly 0-30-60-90 seconds.
     """
 
     def __init__(self, ramp_seconds=RAMP_SECONDS):
@@ -140,22 +145,25 @@ class Difficulty(object):
     def value(self):
         return self.progress
 
-    def _stage(self, start, end):
-        if end <= start:
-            return 1.0 if self.progress >= end else 0.0
-        return max(0.0, min(1.0, (self.progress - start) / (end - start)))
+    @property
+    def stage(self):
+        """0, 1 or 2 (0-30 s, 30-60 s, 60-90 s of the ramp)."""
+        if self.progress < STAGE_1:
+            return 0
+        if self.progress < STAGE_2:
+            return 1
+        return 2
 
     @property
-    def value_progress(self):
-        return self._stage(0.0, VALUE_PHASE)
-
-    @property
-    def interval_progress(self):
-        return self._stage(VALUE_PHASE, INTERVAL_PHASE)
-
-    @property
-    def speed_progress(self):
-        return self._stage(INTERVAL_PHASE, 1.0)
+    def stage_t(self):
+        """Progress (0..1) inside the current stage."""
+        if self.progress < STAGE_1:
+            return self.progress / STAGE_1 if STAGE_1 > 0 else 1.0
+        if self.progress < STAGE_2:
+            return ((self.progress - STAGE_1) / (STAGE_2 - STAGE_1)
+                    if STAGE_2 > STAGE_1 else 1.0)
+        return ((self.progress - STAGE_2) / (1.0 - STAGE_2)
+                if STAGE_2 < 1.0 else 1.0)
 
     @property
     def level(self):
@@ -163,37 +171,64 @@ class Difficulty(object):
         return 1 + int(round(self.progress * 9))
 
     def spawn_interval(self):
-        return (SPAWN_INTERVAL_EASY +
-                (SPAWN_INTERVAL_HARD - SPAWN_INTERVAL_EASY) *
-                self.interval_progress)
+        stage, t = self.stage, self.stage_t
+        if stage == 0:
+            return SPAWN_INTERVAL_EASY
+        if stage == 1:
+            return (SPAWN_INTERVAL_EASY +
+                    (SPAWN_INTERVAL_MID - SPAWN_INTERVAL_EASY) * t)
+        return (SPAWN_INTERVAL_MID +
+                (SPAWN_INTERVAL_HARD - SPAWN_INTERVAL_MID) * t)
+
+    def _base_speed_ramp(self):
+        stage, t = self.stage, self.stage_t
+        if stage == 0:
+            return SPEED_EASY
+        if stage == 1:
+            return SPEED_EASY + (SPEED_MID - SPEED_EASY) * t
+        return SPEED_MID + (SPEED_HARD - SPEED_MID) * t
+
+    @property
+    def speed_ramp(self):
+        """0..1 across the whole speed range (105..290 px/s)."""
+        span = SPEED_HARD - SPEED_EASY
+        if span <= 0:
+            return 1.0
+        return max(0.0, min(1.0, (self._base_speed_ramp() - SPEED_EASY) / span))
 
     def base_speed(self):
         """Base fall speed for new notes.
 
-        It only rises during the speed stage, and while that stage runs it
-        wobbles slowly around the ramp so the fall speed never becomes a fixed
-        constant.  The wobble is off (factor exactly 1.0) before the stage, so
-        the value/interval stages keep the speed untouched.
+        From 30 s on it wobbles slowly around the ramp so the fall speed never
+        feels like a fixed constant; during the variety stage it is exactly
+        ``SPEED_EASY``.
         """
-        base = SPEED_EASY + (SPEED_HARD - SPEED_EASY) * self.speed_progress
-        wobble = 1.0 + (SPEED_WOBBLE * self.speed_progress *
+        base = self._base_speed_ramp()
+        wobble = 1.0 + (SPEED_WOBBLE * self.speed_ramp *
                         math.sin(self.elapsed * SPEED_WOBBLE_RATE))
         return base * wobble
 
     def speed_exponent(self):
         """Smaller exponent -> faster notes become more likely."""
-        return 1.0 - 0.65 * self.speed_progress
+        return 1.0 - 0.65 * self.speed_ramp
 
     def value_weights(self):
-        """Probabilities of 5 / 10 / 15 / 20 point notes.
-
-        The higher values fade in one after another while the spawn interval
-        and the fall speed stay untouched.
-        """
-        t = self.value_progress
-        w10 = 0.30 * t
-        w15 = 0.25 * t ** 1.5
-        w20 = 0.25 * t ** 2.0
+        """Probabilities of 5 / 10 / 15 / 20 point notes."""
+        stage, t = self.stage, self.stage_t
+        if stage == 0:
+            w10 = 0.35 * t
+            w15 = 0.30 * t ** 1.5
+            w20 = 0.0
+        elif stage == 1:
+            w10 = WEIGHTS_STAGE_1_END[1]
+            w15 = WEIGHTS_STAGE_1_END[2]
+            w20 = 0.0
+        else:
+            w10 = (WEIGHTS_STAGE_1_END[1] +
+                   (WEIGHTS_FINAL[1] - WEIGHTS_STAGE_1_END[1]) * t)
+            w15 = (WEIGHTS_STAGE_1_END[2] +
+                   (WEIGHTS_FINAL[2] - WEIGHTS_STAGE_1_END[2]) * t)
+            w20 = WEIGHTS_FINAL[3] * t
         w5 = max(0.0, 1.0 - w10 - w15 - w20)
         return (w5, w10, w15, w20)
 
